@@ -2,3 +2,9 @@
 *.pth
 *.bin
 Long-CLIP/checkpoints/
+*.pt
+*.pth
+*.bin
+__pycache__/
+*.pyc
+Long-CLIP/checkpoints/
