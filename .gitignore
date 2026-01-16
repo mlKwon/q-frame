@@ -1,0 +1,4 @@
+*.pt
+*.pth
+*.bin
+Long-CLIP/checkpoints/
