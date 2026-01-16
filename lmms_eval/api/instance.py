@@ -18,8 +18,15 @@ class Instance:
     doc: dict = None
 
     def __post_init__(self) -> None:
-        # unpack metadata field
-        self.task_name, self.doc_id, self.repeats = self.metadata["task"], self.metadata["doc_id"], self.metadata["repeats"]
+        # # unpack metadata field
+        # self.task_name, self.doc_id, self.repeats = self.metadata["task"], self.metadata["doc_id"], self.metadata["repeats"]
+        # ============ 이 2줄만 수정 ============
+        
+        if isinstance(self.metadata, dict):
+            self.task_name, self.doc_id, self.repeats = self.metadata["task"], self.metadata["doc_id"], self.metadata["repeats"]
+        else:  # tuple인 경우
+            self.task_name, self.doc_id, self.repeats = self.metadata
+        # =====================================
 
     @property
     def args(self):

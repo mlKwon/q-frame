@@ -29,13 +29,15 @@ from PIL import Image
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 import sys
-sys.path.append("./Long-CLIP")
+sys.path.append("/content/q-frame/Long-CLIP")
 from model import longclip
 
-model_path = "./Long-CLIP/checkpoints/longclip-L@336px.pt"
-clip_model, clip_processor = longclip.load(model_path, device=device)
+# model_path = "./Long-CLIP/checkpoints/longclip-L@336px.pt"
+# model_path = "./Long-CLIP/checkpoints/longclip-L@336px.pt"
 
-def TextImageMatching(text, images, task=None, tau=1.0):
+def TextImageMatching(model_path, text, images, task=None, tau=1.0):
+    clip_model, clip_processor = longclip.load(model_path, device=device)
+
     if task == "videomme":
         system_prompt = "Select the best answer to the following multiple-choice question based on the video and the subtitles. Respond with only the letter (A, B, C, or D) of the correct option.\n"
         question = text[len(system_prompt):].split("\n")[0]
