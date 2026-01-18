@@ -67,7 +67,12 @@ def load(name: str, device: Union[str, torch.device] = "cuda" if torch.cuda.is_a
 
     state_dict = torch.load(model_path, map_location="cpu")
     
-    model = build_model(state_dict or model.state_dict(), load_from_clip = False).to(device)
+    # HuggingFace CLIP인지 확인
+    is_hf_clip = "vision_model.embeddings.patch_embedding.weight" in state_dict
+    
+    # HuggingFace CLIP이면 load_from_clip=True 사용
+    model = build_model(state_dict or model.state_dict(), 
+                       load_from_clip=is_hf_clip).to(device)
 
     if str(device) == "cpu":
         model.float()

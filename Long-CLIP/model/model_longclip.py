@@ -258,7 +258,8 @@ class CLIP(nn.Module):
                  ):
         super().__init__()
 
-        self.context_length = 248
+        self.context_length = 77 if load_from_clip else 248  # ← 이렇게 수정
+        self.load_from_clip = load_from_clip  # ← 추가
 
         if isinstance(vision_layers, (tuple, list)):
             vision_heads = vision_width * 32 // 64
@@ -296,6 +297,8 @@ class CLIP(nn.Module):
 
         else:
             self.positional_embedding = nn.Parameter(torch.empty(77, transformer_width))
+          
+        self.load_from_clip = load_from_clip  # ← 이 줄 추가
 
         self.ln_final = LayerNorm(transformer_width)
 
@@ -356,7 +359,16 @@ class CLIP(nn.Module):
     def encode_text(self, text): 
         x = self.token_embedding(text).type(self.dtype)  # [batch_size, n_ctx, d_model]
         
-        x = x + (self.positional_embedding.to(x.device) * self.mask1.to(x.device)).type(self.dtype).to(x.device) + (self.positional_embedding_res.to(x.device) * self.mask2.to(x.device)).type(self.dtype).to(x.device) 
+        # x = x + (self.positional_embedding.to(x.device) * self.mask1.to(x.device)).type(self.dtype).to(x.device) + (self.positional_embedding_res.to(x.device) * self.mask2.to(x.device)).type(self.dtype).to(x.device)
+
+        # ← 여기부터 수정
+        if self.load_from_clip:
+            # 일반 CLIP 방식 (77 tokens)
+            x = x + self.positional_embedding.to(x.device).type(self.dtype)
+        else:
+            # LongCLIP 방식 (248 tokens)
+            x = x + (self.positional_embedding.to(x.device) * self.mask1.to(x.device)).type(self.dtype).to(x.device) + (self.positional_embedding_res.to(x.device) * self.mask2.to(x.device)).type(self.dtype).to(x.device)
+        # 여기까지 수정 ←
         
         x = x.permute(1, 0, 2)  # NLD -> LND
         x = self.transformer(x)
@@ -372,8 +384,15 @@ class CLIP(nn.Module):
     def encode_text_full(self, text): 
         x = self.token_embedding(text).type(self.dtype)  # [batch_size, n_ctx, d_model]
         
-        x = x + (self.positional_embedding.to(x.device) * self.mask1.to(x.device)).type(self.dtype).to(x.device) + (self.positional_embedding_res.to(x.device) * self.mask2.to(x.device)).type(self.dtype).to(x.device) 
-        
+        # x = x + (self.positional_embedding.to(x.device) * self.mask1.to(x.device)).type(self.dtype).to(x.device) + (self.positional_embedding_res.to(x.device) * self.mask2.to(x.device)).type(self.dtype).to(x.device) 
+
+        # ← 여기부터 수정
+        if self.load_from_clip:
+            x = x + self.positional_embedding.to(x.device).type(self.dtype)
+        else:
+            x = x + (self.positional_embedding.to(x.device) * self.mask1.to(x.device)).type(self.dtype).to(x.device) + (self.positional_embedding_res.to(x.device) * self.mask2.to(x.device)).type(self.dtype).to(x.device)
+        # 여기까지 수정 ←
+
         x = x.permute(1, 0, 2)  # NLD -> LND
         x = self.transformer(x)
         x = x.permute(1, 0, 2)  # LND -> NLD
@@ -519,6 +538,10 @@ def convert_hf_to_openai(hf_dict: dict) -> dict:
     openai_dict = {}
     
     for key, value in hf_dict.items():
+        # position_ids 스킵
+        if "position_ids" in key:
+            continue
+            
         new_key = key
         
         # Vision model 변환
@@ -526,7 +549,7 @@ def convert_hf_to_openai(hf_dict: dict) -> dict:
             new_key = new_key.replace("vision_model.", "visual.")
             new_key = new_key.replace("embeddings.patch_embedding", "conv1")
             new_key = new_key.replace("embeddings.class_embedding", "class_embedding")
-            new_key = new_key.replace("embeddings.position_embedding", "positional_embedding")
+            new_key = new_key.replace("embeddings.position_embedding.weight", "positional_embedding")  # ← .weight 제거
             new_key = new_key.replace("pre_layrnorm", "ln_pre")
             new_key = new_key.replace("post_layernorm", "ln_post")
             new_key = new_key.replace("encoder.layers", "transformer.resblocks")
@@ -539,7 +562,7 @@ def convert_hf_to_openai(hf_dict: dict) -> dict:
         # Text model 변환
         elif key.startswith("text_model."):
             new_key = new_key.replace("text_model.embeddings.token_embedding", "token_embedding")
-            new_key = new_key.replace("text_model.embeddings.position_embedding", "positional_embedding")
+            new_key = new_key.replace("text_model.embeddings.position_embedding.weight", "positional_embedding")  # ← .weight 제거
             new_key = new_key.replace("text_model.encoder.layers", "transformer.resblocks")
             new_key = new_key.replace("text_model.final_layer_norm", "ln_final")
             new_key = new_key.replace("layer_norm1", "ln_1")
@@ -550,7 +573,13 @@ def convert_hf_to_openai(hf_dict: dict) -> dict:
             
         # Visual projection 변환
         elif key == "visual_projection.weight":
-            new_key = "visual.proj"
+            # new_key = "visual.proj"
+            openai_dict["visual.proj"] = value.T
+            continue
+        
+        # Text projection 변환
+        elif key == "text_projection.weight":
+            new_key = "text_projection"  # ← .weight 제거
             
         # Q, K, V 분리된 경우 스킵
         if ".q_proj." in new_key or ".k_proj." in new_key or ".v_proj." in new_key:
@@ -617,6 +646,7 @@ def build_model(state_dict: dict, load_from_clip: bool):
     # HuggingFace CLIP 형식이면 OpenAI 형식으로 변환
     if is_huggingface_clip(state_dict):
         state_dict = convert_hf_to_openai(state_dict)
+        load_from_clip = True  # ← 이 줄 추가
     # =========================================================
     
     vit = "visual.proj" in state_dict
