@@ -50,9 +50,12 @@ def TextImageMatching(model_path, text, images, task=None, tau=1.0):
     else:
         raise ValueError("unsupport task.")
 
-    # print(f"{text}\n{'-'*100}\n{question}")
     with torch.no_grad(), torch.cuda.amp.autocast():
-        text = longclip.tokenize([question]).to(device)
+        # text = longclip.tokenize([question]).to(device)
+        if hasattr(clip_model, 'load_from_clip') and clip_model.load_from_clip:
+            text = longclip.tokenize([question], context_length=77).to(device)
+        else:
+            text = longclip.tokenize([question], context_length=248).to(device)
         images = torch.stack([clip_processor(Image.fromarray(image)) for image in images]).to(device)
         
         image_features = clip_model.encode_image(images)
@@ -90,6 +93,7 @@ class Qwen2_VL(lmms):
         high_frames: int = 6,
         mid_frames: int = 6,
         low_frames: int = 8,
+        model_path: str = "/content/q-frame/Long-CLIP/checkpoints/clip-vit-base-patch32@336px.pt",
         **kwargs,
     ) -> None:
         super().__init__()
@@ -124,6 +128,7 @@ class Qwen2_VL(lmms):
         self.high_frames = high_frames
         self.mid_frames = mid_frames
         self.low_frames = low_frames
+        self.model_path = model_path
         self._tokenizer = AutoTokenizer.from_pretrained(pretrained)
 
         self._config = self.model.config
@@ -286,8 +291,15 @@ class Qwen2_VL(lmms):
                         visual, frame_idx, frame_time, video_time = self.load_video(visual, self.max_num_frames)
 
                         try:
-                            indices = TextImageMatching(context, visual, task=task, tau=0.8)
-                        
+                            with open("/content/qframe_debug.txt", "a") as f:
+                                f.write(f"[Q-Frame] 프레임 선택 시작 (총 {len(visual)}개)\n")
+                                f.flush()
+                            indices = TextImageMatching(self.model_path, context, visual, task=task, tau=0.8)
+
+                            with open("/content/qframe_debug.txt", "a") as f:
+                                f.write(f"[Q-Frame] ✅ 성공!\n")
+                                f.flush()
+
                             visual_tmp = [None] * len(visual)
                             visual = [Image.fromarray(v).convert("RGB") for v in visual]
                             width, height = visual[0].size
@@ -300,6 +312,9 @@ class Qwen2_VL(lmms):
                             
                             visual = [v for v in visual_tmp if v is not None ]
                         except Exception as e:
+                            with open("/content/qframe_debug.txt", "a") as f:
+                                f.write(f"[Q-Frame] ❌ 실패: {e}\n")
+                                f.flush()
                             eval_logger.info(f"{e}")
                             if len(visual) >= self.sample_frames:
                                 visual = visual[sorted(random.sample(range(len(visual)), self.sample_frames))]
