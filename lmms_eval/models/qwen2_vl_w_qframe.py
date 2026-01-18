@@ -200,8 +200,13 @@ class Qwen2_VL(lmms):
     def flatten(self, input):
         new_list = []
         for i in input:
-            for j in i:
-                new_list.append(j)
+            if isinstance(i, str):  # ← 문자열은 그대로 추가
+                new_list.append(i)
+            elif isinstance(i, (list, tuple)):  # ← 리스트/튜플만 펼침
+                for j in i:
+                    new_list.append(j)
+            else:
+                new_list.append(i)
         return new_list
     
     def load_video(self, video_path, max_frames_num, fps=1, force_sample=False):
@@ -242,10 +247,27 @@ class Qwen2_VL(lmms):
         # in the same batch.
         re_ords = utils.Collator([reg.args for reg in requests], _collate, grouping=True)
         chunks = re_ords.get_batched(n=self.batch_size, batch_fn=None)
+
+        with open("/content/qframe_debug.txt", "a") as f:
+           f.write(f"Chunks 진입! -> {chunks}\n")
+           f.flush()
+
         for chunk in chunks:
             contexts, all_gen_kwargs, doc_to_visual, doc_id, task, split = zip(*chunk)
+
+            with open("/content/qframe_debug.txt", "a") as f:
+              f.write(f"contexts 이렇게 생김 ({len(contexts)}개) -> {contexts}\n")
+              f.flush()
+            
             task = task[0]
             split = split[0]
+
+            with open("/content/qframe_debug.txt", "a") as f:
+              f.write(f"task 어떻게 생겼나? ({len(task)}개) -> {task}\n")
+              f.write(f"split 어떻게 생겼나? ({len(split)}개) -> {split}\n")
+              f.write(f"doc_id 어떻게 생겼나? ({len(doc_id)}개) -> {doc_id}\n")
+              f.flush()
+
             visuals = [doc_to_visual[0](self.task_dict[task][split][ids]) for ids in doc_id]
             visuals = self.flatten(visuals)
 
@@ -277,8 +299,21 @@ class Qwen2_VL(lmms):
 
                 message = [{"role": "system", "content": "You are a helpful assistant."}]
 
+                with open("/content/qframe_debug.txt", "a") as f:
+                    f.write(f"Visual 있나 확인\n")
+                    f.flush()
+
                 if len(visuals) > 0:
+
+                    with open("/content/qframe_debug.txt", "a") as f:
+                        f.write(f"Visual 있음! 그러면 mp4 들어있나 확인. Visuals는 어떻게 생겼나? ({len(visuals)}개) {visuals}.\n")
+
                     visual = visuals[i] if i < len(visuals) else None
+                    
+                    with open("/content/qframe_debug.txt", "a") as f:
+                        f.write(f"일단 Visual은 이렇게 생김. -> {visual}\n")
+                        f.flush()
+
                     if isinstance(visual, str) and visual.endswith((".mp4", ".avi", ".mov")):  # Video file
                         # modify the video processing to multi-image processing
                         """
@@ -290,10 +325,12 @@ class Qwen2_VL(lmms):
                         """
                         visual, frame_idx, frame_time, video_time = self.load_video(visual, self.max_num_frames)
 
+                        with open("/content/qframe_debug.txt", "a") as f:
+                            f.write(f"Q-Frame 시도 직전의 Visual -> {visual}\n")
+                            f.flush()
                         try:
                             with open("/content/qframe_debug.txt", "a") as f:
                                 f.write(f"[Q-Frame] 프레임 선택 시작 (총 {len(visual)}개)\n")
-                                f.flush()
                             indices = TextImageMatching(self.model_path, context, visual, task=task, tau=0.8)
 
                             with open("/content/qframe_debug.txt", "a") as f:
