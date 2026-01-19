@@ -39,7 +39,8 @@ def TextImageMatching(model_path, text, images, task=None, tau=1.0):
     clip_model, clip_processor = longclip.load(model_path, device=device)
 
     if task == "videomme":
-        system_prompt = "Select the best answer to the following multiple-choice question based on the video and the subtitles. Respond with only the letter (A, B, C, or D) of the correct option.\n"
+        # system_prompt = "Select the best answer to the following multiple-choice question based on the video and the subtitles. Respond with only the letter (A, B, C, or D) of the correct option.\n"
+        system_prompt = "Select the best answer. Respond with only the letter (A, B, C, or D)\n"
         question = text[len(system_prompt):].split("\n")[0]
     elif task == "videomme_w_subtitle":
         question = text.split("\n")[-6] 
